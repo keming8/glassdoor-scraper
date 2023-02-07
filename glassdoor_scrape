@@ -1,0 +1,188 @@
+import webbrowser
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from time import sleep
+import json
+from bs4 import BeautifulSoup as bs
+import requests
+
+""" Input: Takes in a company name from user input.
+    Output: Returns company information in the form of a Python dictionary."""
+    
+def glassdoorScrape(driver, companyName, ret):
+    
+    url = 'https://www.glassdoor.com/Search/results.htm?keyword='+companyName
+    
+    driver.get(url)
+    element = driver.find_element(By.XPATH, "//a[contains(@href, '/Overview/')]")
+
+    #click on the first instance
+    driver.execute_script("arguments[0].click();", element)
+    
+    soup = bs(driver.page_source, 'html.parser')
+
+    # Get Company Mission
+    try:
+        mission = driver.find_elements(By.XPATH,'.//span[@class="css-dwl48b css-1cnqmgc"]')[1].text
+        
+    except:
+        mission = 'N/A'
+
+    # Get Company Website
+    try:
+        for i in soup.find(attrs={"data-test": "employer-website"}):
+            website = i
+    except:
+        website = 'N/A'
+
+    # Get Company Industry
+    try:
+        for i in soup.find(attrs={"data-test": "employer-industry"}):
+            industry = i
+    except:
+        industry = 'N/A'
+
+    # Get Company Headquarters
+    try:
+        for i in soup.find(attrs={"data-test": "employer-headquarters"}):
+            hq = i
+    except:
+        hq = 'N/A'
+
+    # Get Company Size
+    try:
+        for i in soup.find(attrs={"data-test": "employer-size"}):
+            sz = i
+    except:
+        sz = 'N/A'
+
+    # Get Company Founded
+    try:
+        for i in soup.find(attrs={"data-test": "employer-founded"}):
+            found = i
+    except:
+        found = 'N/A'
+
+    # Get Company Revenue
+    try:
+        for i in soup.find(attrs={"data-test": "employer-revenue"}):
+            rev = i
+        if not(rev[1].isnumeric()):
+            rev = 'N/A'
+    except:
+        rev = 'N/A'
+
+    # Get the recommended percentage
+    try:
+        recommended = driver.find_elements(By.CLASS_NAME,'textVal')[0].text
+    except:
+        recommended = 'N/A'
+
+    # Get CEO approval percentage
+    try:
+        approveCEO = driver.find_elements(By.CLASS_NAME, 'textVal')[1].text
+    except:
+        approveCEO = 'N/A'
+
+    # Get Rating out of 5
+    try:
+        rating = driver.find_element(By.XPATH,'.//div[@class="mr-xsm css-1c86vvj eky1qiu0"]').text
+    except:
+        rating = 'N/A'
+    #recommendParagraph = driver.find_element(By.XPATH,'.//div[@class="pb-std pt-std d-none css-ujzx5o e1r4hxna3"]').text
+
+    # Get CEO
+    try:
+        ceo = driver.find_element(By.XPATH, './/div[@class="d-lg-table-cell ceoName pt-sm pt-lg-0 px-lg-sm css-dwl48b css-1cnqmgc"]').text
+        i = 0
+        while i < len(ceo):
+            if ceo[i].isnumeric():
+                ceo = ceo[0:i]
+                break
+            else:
+                i += 1
+        ceo = ceo.strip()
+    except:
+        ceo = 'N/A'
+
+
+    # Get Company Type
+    try:
+        for i in soup.find(attrs={"data-test": "employer-type"}):
+            typ = i
+        if 'Public' in typ:
+            dashInd = typ.index('-')
+            ticker = typ[dashInd + 10:-1]
+        else:
+            ticker = 'N/A'
+    except:
+        typ = 'N/A'
+
+    ret['Mission'] = mission
+    ret['Website'] = website
+    ret['Headquarters'] = hq
+    ret['Size'] = sz
+    ret['Industry'] = industry
+    ret['Recommended to Friends'] = recommended
+    ret['Approve of CEO'] = approveCEO
+    ret['Overall Rating'] = rating
+    ret['CEO'] = ceo
+    ret['Company Type'] = typ
+    ret['Founded'] = found
+    ret['Revenue'] = rev
+    ret['Ticker'] = ticker    
+
+""" Makes use of the Alpha Vantage API to scrape company's stock information, if it exists. 
+    Appends stock information to the dictionary 
+    Source: https://www.alphavantage.co """
+    
+def financeScrape(ticker, ret):
+    #key = input your API key
+
+    for i in ['GLOBAL_QUOTE', 'OVERVIEW']:
+        url = 'https://www.alphavantage.co/query?function='+i+'&symbol='+ticker+'&apikey='+key
+        r = requests.get(url)
+        data = r.json()
+        if i == 'GLOBAL_QUOTE':
+            price = data['Global Quote']
+            price = price['05. price']
+            ret['Price'] = price
+        if i == 'OVERVIEW':
+            desc = data['Description']
+            profitMargin = data['ProfitMargin']
+            yearHigh = data['52WeekHigh']
+            yearLow = data['52WeekLow']
+            moving50 = data['50DayMovingAverage']
+            moving200 = data['200DayMovingAverage']
+            ret['Description'] = desc
+            ret['ProfitMargin'] = profitMargin
+            ret['52WeekHigh'] = yearHigh
+            ret['52WeekLow'] = yearLow
+            ret['50DayMovingAverage'] = moving50
+            ret['200DayMovingAverage'] = moving200
+ 
+
+def main():
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_experimental_option("useAutomationExtension", False)
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+
+    #This line prevents the pop-up
+    chrome_options.add_argument("--headless")
+    
+    chrome_options.add_argument('--ignore-certificate-errors')
+    chrome_options.add_argument('--incognito')
+
+    driver = webdriver.Chrome(options=chrome_options)
+
+    ret = dict()
+    companyName = input("Please enter the company name: ")
+    glassdoorScrape(driver, companyName, ret)
+
+    if ret['Ticker'] != 'N/A':
+        financeScrape(ret['Ticker'], ret)
+    else:
+        ret['Price'] = 'N/A'
+
+if __name__ == "__main__":
+    main()
